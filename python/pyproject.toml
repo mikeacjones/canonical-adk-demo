@@ -1,0 +1,15 @@
+[project]
+name = "travel-agent-google-adk"
+version = "0.1.0"
+description = "Google ADK travel-planner agent made durable with Temporal — Python"
+requires-python = ">=3.11"
+dependencies = [
+    "temporalio[google-adk]>=1.30,<2",
+    "google-adk[mcp]>=2.6,<2.7",
+    "google-genai>=2.10,<3",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+]

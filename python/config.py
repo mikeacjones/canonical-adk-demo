@@ -1,0 +1,98 @@
+"""The ONE place that reads environment config. Everything else imports from here."""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load repo-root .env (shared demoer quick-switch), then local overrides.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv()
+
+# Task queue — env-overridable so the demo-cloud registry's "crashable
+# workspace" feature can hand each attendee an isolated queue (it injects
+# TEMPORAL_TASK_QUEUE=<base>-<workspace-id> into the worker + app). Falls back to
+# the legacy TASK_QUEUE, then the shared default for local/always-on runs.
+TASK_QUEUE = os.getenv("TEMPORAL_TASK_QUEUE") or os.getenv("TASK_QUEUE", "travel-agent")
+
+# Temporal connection — local dev server by default; Temporal Cloud via env.
+TEMPORAL_ADDRESS = os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
+TEMPORAL_NAMESPACE = os.getenv("TEMPORAL_NAMESPACE", "default")
+TEMPORAL_API_KEY = os.getenv("TEMPORAL_API_KEY")
+TEMPORAL_TLS_CERT = os.getenv("TEMPORAL_TLS_CERT")
+TEMPORAL_TLS_KEY = os.getenv("TEMPORAL_TLS_KEY")
+
+# Database — a full DB_URL (local `docker compose`) OR discrete DB_* parts
+# (EKS: the platform injects DB_HOST + a DB_PASSWORD secret, so we compose it —
+# a password can't be interpolated into a single URL env var via a secret ref).
+def _db_url() -> str:
+    if url := os.getenv("DB_URL"):
+        return url
+    if host := os.getenv("DB_HOST"):
+        user = os.getenv("DB_USER", "demo")
+        pw = os.getenv("DB_PASSWORD", "demo")
+        port = os.getenv("DB_PORT", "5432")
+        name = os.getenv("DB_NAME", "travel")
+        return f"postgresql://{user}:{pw}@{host}:{port}/{name}"
+    return "postgresql://demo:demo@localhost:5432/travel"
+
+
+DB_URL = _db_url()
+
+# Google ADK / Gemini. The key stays worker-side: the Temporal ADK plugin
+# reconstructs the real model inside the model Activity.
+ADK_MODEL = os.getenv("ADK_MODEL", "gemini-3.6-flash")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+# How many searches the planner fans out per research_destination pass. These run
+# in PARALLEL activities, so more searches = a richer guide and a bigger fan-out to
+# watch WITHOUT much extra wall-clock (bounded by the slowest single search).
+RESEARCH_SEARCHES = int(os.getenv("RESEARCH_SEARCHES", "6"))
+
+# Demo chaos: probability (0.0–1.0) that a single web_search activity randomly
+# fails with a RETRYABLE error. Because the searches fan out in parallel, a modest
+# rate means a couple of them will visibly retry (with backoff) in the workflow
+# history while the rest sail through — a live demonstration of Temporal owning
+# retries. Set to 0 to disable.
+WEB_SEARCH_FAIL_RATE = float(os.getenv("WEB_SEARCH_FAIL_RATE", "0.4"))
+
+# Durable checkout demo. The default intentionally fails the hotel step after
+# the flight is reserved so CheckoutWorkflow visibly compensates by cancelling
+# the flight. Disable it to exercise the successful commit path.
+CHECKOUT_FAIL_HOTEL = os.getenv("CHECKOUT_FAIL_HOTEL", "true").lower() in (
+    "1", "true", "yes", "on",
+)
+CHECKOUT_STEP_DELAY_SECONDS = float(os.getenv("CHECKOUT_STEP_DELAY_SECONDS", "1.0"))
+# Demo pacing: an artificial delay (seconds) each execute_tool activity waits
+# before returning. DB lookups resolve near-instantly, which leaves no room to
+# narrate — or to kill a worker mid-tool-call — during a live demo. Default 1s
+# gives every tool call a visible beat in the workflow history. Set to 0 to
+# disable (e.g. for tests / production-like runs).
+TOOL_DELAY_SECONDS = float(os.getenv("TOOL_DELAY_SECONDS", "1.0"))
+
+# (The HTTP gateway + web UI live in web/ — see web/gateway.py. This folder is
+#  worker-only: workflow, activities, and the config they need.)
+
+
+async def temporal_client(*, plugins: list | None = None):
+    """Connect to Temporal — local dev server, Cloud (API key), or Cloud (mTLS)."""
+    from temporalio.client import Client, TLSConfig
+    from temporalio.contrib.pydantic import pydantic_data_converter
+
+    common = {
+        "namespace": TEMPORAL_NAMESPACE,
+        "data_converter": pydantic_data_converter,
+        "plugins": plugins or [],
+    }
+
+    if TEMPORAL_API_KEY:
+        return await Client.connect(
+            TEMPORAL_ADDRESS, api_key=TEMPORAL_API_KEY, tls=True, **common
+        )
+    if TEMPORAL_TLS_CERT and TEMPORAL_TLS_KEY:
+        tls = TLSConfig(
+            client_cert=Path(TEMPORAL_TLS_CERT).read_bytes(),
+            client_private_key=Path(TEMPORAL_TLS_KEY).read_bytes(),
+        )
+        return await Client.connect(TEMPORAL_ADDRESS, tls=tls, **common)
+    return await Client.connect(TEMPORAL_ADDRESS, **common)

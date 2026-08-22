@@ -1,0 +1,31 @@
+# secrets / local config
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# generated frontend assets
+node_modules/
+dist/
+*.tsbuildinfo
+
+# go
+go/.bin/
+
+# logs & scratch
+*.log
+nohup.out
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# claude code local settings
+.claude/settings.local.json
