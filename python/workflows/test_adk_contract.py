@@ -5,10 +5,21 @@ from temporalio.contrib.google_adk_agents.workflow import activity_tool
 
 from activities.tools import search_flights
 from models.types import ItineraryItem
-from workflows.agent import TravelAgentWorkflow
+from workflows.agent import TravelAgentWorkflow, _turn_failure_message
 
 
 class GoogleAdkContractTests(unittest.TestCase):
+    def test_invalid_google_key_has_a_concise_non_secret_diagnosis(self) -> None:
+        failure = RuntimeError(
+            "400 INVALID_ARGUMENT: API_KEY_INVALID: API key not valid."
+        )
+
+        message = _turn_failure_message(failure)
+
+        self.assertIn("Gemini rejected GOOGLE_API_KEY", message)
+        self.assertIn("restart the worker", message)
+        self.assertNotIn("400 INVALID_ARGUMENT", message)
+
     def test_agent_builds_with_released_adk_and_temporal_integration(self) -> None:
         workflow = TravelAgentWorkflow("traveller@example.com")
         workflow.account_key = "trip-test"

@@ -70,6 +70,27 @@ TOOL_RETRY = RetryPolicy(
 )
 
 
+def _turn_failure_message(error: BaseException, *, approved: bool = False) -> str:
+    """Return a concise chat-safe diagnosis from a nested Temporal failure."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = getattr(current, "message", None) or str(current)
+        if (
+            "API_KEY_INVALID" in message
+            or "API key not valid" in message
+            or "Gemini rejected GOOGLE_API_KEY" in message
+        ):
+            return (
+                "Gemini rejected GOOGLE_API_KEY. Replace it in the repository-root "
+                ".env and restart the worker."
+            )
+        current = getattr(current, "cause", None)
+    action = "finish the approved action" if approved else "complete that turn"
+    return f"I couldn't {action}: {type(error).__name__}: {error}"
+
+
 @workflow.defn
 class TravelAgentWorkflow:
     """One Workflow execution owns one ADK session and one browser conversation."""
@@ -282,7 +303,7 @@ class TravelAgentWorkflow:
             self._finish_turn(answer)
             return TurnResult(status="reply", reply=answer)
         except Exception as error:
-            message = f"I couldn't complete that turn: {type(error).__name__}: {error}"
+            message = _turn_failure_message(error)
             self._finish_turn(message)
             return TurnResult(status="reply", reply=message)
 
@@ -368,9 +389,7 @@ class TravelAgentWorkflow:
                 return
             self._finish_turn(answer)
         except Exception as error:
-            self._finish_turn(
-                f"I couldn't finish the approved action: {type(error).__name__}: {error}"
-            )
+            self._finish_turn(_turn_failure_message(error, approved=True))
 
     def _finish_turn(self, answer: str) -> None:
         if answer:

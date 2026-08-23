@@ -7,6 +7,7 @@ from temporalio.contrib.google_adk_agents import GoogleAdkPlugin
 from temporalio.worker import Worker
 
 import config
+from interceptors import GoogleAdkErrorInterceptor
 from activities import control
 from activities.checkout import (
     book_activity,
@@ -65,6 +66,7 @@ async def main() -> None:
                 finalize_checkout,
             ],
             activity_executor=activity_executor,
+            interceptors=[GoogleAdkErrorInterceptor()],
         )
         print(
             f"python Google ADK worker polling '{config.TASK_QUEUE}' on "
