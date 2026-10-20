@@ -79,6 +79,8 @@ cd go && make worker
 Histories are language-specific, so do not switch SDKs for an already-started
 conversation.
 
+To present the demo, follow [RUNBOOK.md](RUNBOOK.md): the walkthrough beat by beat, and where in the code each part happens.
+
 ## Demo paths
 
 - Ask for events in Auckland in March, find a flight, then ask for an invoice.
